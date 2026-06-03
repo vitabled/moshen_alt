@@ -17,11 +17,11 @@ import (
 
 // ========== FILL THESE IN ==========
 const (
-	testEndpoint  = "https://s3.storage.selcloud.ru" // your S3 endpoint
-	testRegion    = "ru-1"                           // your region
-	testBucket    = "YOUR_BUCKET"                    // your bucket name
-	testAccessKey = "YOUR_ACCESS_KEY"
-	testSecretKey = "YOUR_SECRET_KEY"
+	testEndpoint  = "https://s3.ru1.storage.beget.cloud" // your S3 endpoint
+	testRegion    = "ru1"                                // your region
+	testBucket    = "304a6d5bed63-gymlogappbucket"       // your bucket name
+	testAccessKey = "UMP8RBNHXZEHRPL1TVGT"
+	testSecretKey = "LQzo4eDzFlMGkmVCLbDhDAS6vHWrQtFGV2YHON97"
 	testPrefix    = "test-tunnel/"
 )
 
@@ -188,3 +188,42 @@ func TestS3KeyFormat(t *testing.T) {
 	}
 	t.Log("Key format verified ✓")
 }
+
+// TestS3FullPipelineEndToEnd tests the end-to-end flow with a real running Python server.
+// It writes "PING_FROM_GO_CLIENT" to the c2s path, and blocks reading from s2c
+// waiting for a real server response forwarded from Xray.
+func TestS3FullPipelineEndToEnd(t *testing.T) {
+	c := testClient(t)
+	defer c.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	conn, err := c.Dial(ctx)
+	if err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	s3c := conn.(*S3Conn)
+	t.Logf("Started End-to-End session ID: %s", s3c.sessionID)
+	t.Log("Writing 'PING_FROM_GO_CLIENT' to S3...")
+
+	payload := []byte("PING_FROM_GO_CLIENT")
+	n, err := conn.Write(payload)
+	if err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+	t.Logf("Wrote %d bytes successfully. Now waiting for real server response via s2c...", n)
+
+	// Block reading response from the real server.
+	conn.SetReadDeadline(time.Now().Add(45 * time.Second))
+	buf := make([]byte, 4096)
+	rn, err := conn.Read(buf)
+	if err != nil {
+		t.Fatalf("Read from real server failed: %v (Is the Python server running and connected to Xray?)", err)
+	}
+
+	t.Logf("Received response from real server: %q (%d bytes)", string(buf[:rn]), rn)
+}
+
