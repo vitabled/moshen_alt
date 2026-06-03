@@ -16,6 +16,7 @@ import (
 	tlsC "github.com/metacubex/mihomo/component/tls"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/gun"
+	s3Transport "github.com/metacubex/mihomo/transport/s3"
 	"github.com/metacubex/mihomo/transport/tuic/common"
 	"github.com/metacubex/mihomo/transport/vless"
 	"github.com/metacubex/mihomo/transport/vless/encryption"
@@ -42,6 +43,8 @@ type Vless struct {
 	gunClient *gun.Client
 	// for xhttp
 	xhttpClient *xhttp.Client
+	// for s3 transport
+	s3Client *s3Transport.Client
 
 	realityConfig *tlsC.RealityConfig
 	echConfig     *ech.Config
@@ -68,8 +71,9 @@ type VlessOption struct {
 	HTTP2Opts         HTTP2Options      `proxy:"h2-opts,omitempty"`
 	GrpcOpts          GrpcOptions       `proxy:"grpc-opts,omitempty"`
 	WSOpts            WSOptions         `proxy:"ws-opts,omitempty"`
-	XHTTPOpts         XHTTPOptions      `proxy:"xhttp-opts,omitempty"`
-	WSHeaders         map[string]string `proxy:"ws-headers,omitempty"`
+	XHTTPOpts         XHTTPOptions         `proxy:"xhttp-opts,omitempty"`
+	S3Opts            s3Transport.Options  `proxy:"s3-opts,omitempty"`
+	WSHeaders         map[string]string    `proxy:"ws-headers,omitempty"`
 	SkipCertVerify    bool              `proxy:"skip-cert-verify,omitempty"`
 	Fingerprint       string            `proxy:"fingerprint,omitempty"`
 	Certificate       string            `proxy:"certificate,omitempty"`
@@ -216,6 +220,8 @@ func (v *Vless) StreamConnContext(ctx context.Context, c net.Conn, metadata *C.M
 		break // already handle in dialContext
 	case "xhttp":
 		break // already handle in dialContext
+	case "s3":
+		break // already handle in dialContext — S3Conn handles its own HTTPS
 	default:
 		// default tcp network
 		// handle TLS
@@ -300,6 +306,8 @@ func (v *Vless) dialContext(ctx context.Context) (c net.Conn, err error) {
 		return v.gunClient.Dial()
 	case "xhttp":
 		return v.xhttpClient.Dial(ctx)
+	case "s3":
+		return v.s3Client.Dial(ctx)
 	default:
 	}
 	return v.dialer.DialContext(ctx, "tcp", v.addr)
@@ -382,6 +390,11 @@ func (v *Vless) Close() error {
 	}
 	if v.xhttpClient != nil {
 		if err := v.xhttpClient.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if v.s3Client != nil {
+		if err := v.s3Client.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -771,6 +784,11 @@ func NewVless(option VlessOption) (*Vless, error) {
 		v.xhttpClient, err = xhttp.NewClient(cfg, makeTransport, makeDownloadTransport, v.realityConfig != nil)
 		if err != nil {
 			return nil, err
+		}
+	case "s3":
+		v.s3Client, err = s3Transport.NewClient(option.S3Opts)
+		if err != nil {
+			return nil, fmt.Errorf("s3 transport init failed: %w", err)
 		}
 	}
 
