@@ -11,6 +11,7 @@ type Options struct {
 	AccessKey string `proxy:"access-key"`             // AWS access key ID
 	SecretKey string `proxy:"secret-key"`             // AWS secret access key
 	Prefix    string `proxy:"prefix,omitempty"`       // object key prefix, default "tunnel/"
+	ClientID  string `proxy:"client-id,omitempty"`    // optional client ID for zero-list discovery
 
 	// Polling tuning
 	PollMinMs int `proxy:"poll-min-ms,omitempty"` // aggressive poll floor in ms (default 50)

@@ -44,7 +44,7 @@ type S3Conn struct {
 }
 
 func newS3Conn(client *Client, sessionID string) *S3Conn {
-	return &S3Conn{
+	c := &S3Conn{
 		client:       client,
 		sessionID:    sessionID,
 		writeBuf:     make([]byte, 0, client.opts.ChunkSize),
@@ -53,9 +53,11 @@ func newS3Conn(client *Client, sessionID string) *S3Conn {
 		maxPoll:      client.opts.PollMax(),
 		closed:       make(chan struct{}),
 	}
+	go c.writeLoop()
+	return c
 }
 
-// Read polls S3 for downstream data with exponential backoff.
+// Read polls S3 for downstream data with fixed polling interval.
 func (c *S3Conn) Read(b []byte) (int, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
@@ -90,22 +92,20 @@ func (c *S3Conn) Read(b []byte) (int, error) {
 		data, found, err := c.client.getObject(ctx, key)
 
 		if err != nil {
-			// On transient errors, back off and retry
+			// On transient errors, wait and retry
 			select {
 			case <-c.closed:
 				return 0, io.EOF
 			case <-time.After(c.pollInterval):
 			}
-			c.backoff()
 			continue
 		}
 
 		if found && len(data) > 0 {
-			// Data received — reset to aggressive polling
+			// Data received — keep polling at fixed interval
 			c.readBuf = data
 			c.readPos = 0
 			c.readSeq++
-			c.pollInterval = c.minPoll
 
 			n := copy(b, c.readBuf[c.readPos:])
 			c.readPos += n
@@ -116,17 +116,17 @@ func (c *S3Conn) Read(b []byte) (int, error) {
 			return n, nil
 		}
 
-		// Empty — wait with backoff before next poll
+		// Empty — wait before next poll
 		select {
 		case <-c.closed:
 			return 0, io.EOF
 		case <-time.After(c.pollInterval):
 		}
-		c.backoff()
 	}
 }
 
 // Write buffers data and flushes via S3 PUT when the chunk is full.
+// Remaining data is flushed asynchronously by writeLoop.
 func (c *S3Conn) Write(b []byte) (int, error) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
@@ -160,14 +160,6 @@ func (c *S3Conn) Write(b []byte) (int, error) {
 			if err := c.flushLocked(); err != nil {
 				return written, err
 			}
-		}
-	}
-
-	// Flush any remaining data immediately — latency matters more than
-	// batching for an interactive tunnel.
-	if len(c.writeBuf) > 0 {
-		if err := c.flushLocked(); err != nil {
-			return written, err
 		}
 	}
 
@@ -226,11 +218,22 @@ func (c *S3Conn) SetWriteDeadline(t time.Time) error {
 
 // ---------- helpers ----------
 
-// backoff doubles the polling interval, capped at maxPoll.
-func (c *S3Conn) backoff() {
-	c.pollInterval *= 2
-	if c.pollInterval > c.maxPoll {
-		c.pollInterval = c.maxPoll
+// writeLoop flushes the write buffer every 20ms.
+func (c *S3Conn) writeLoop() {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.closed:
+			c.writeMu.Lock()
+			_ = c.flushLocked()
+			c.writeMu.Unlock()
+			return
+		case <-ticker.C:
+			c.writeMu.Lock()
+			_ = c.flushLocked()
+			c.writeMu.Unlock()
+		}
 	}
 }
 

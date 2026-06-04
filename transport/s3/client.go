@@ -14,16 +14,20 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
-// Client manages S3 HTTP interactions and produces S3Conn instances.
+// Client manages S3 HTTP interactions and produces MuxStream instances.
 // It uses a raw net/http.Client with hand-rolled AWS Signature V4
 // signing — no AWS SDK dependency to keep the binary small.
 type Client struct {
 	opts       Options
 	httpClient *http.Client
 	parsedURL  *url.URL // parsed Endpoint
+
+	muxSession *MuxSession
+	muxMu      sync.Mutex
 }
 
 // NewClient creates an S3 client from parsed options.
@@ -47,17 +51,35 @@ func NewClient(opts Options) (*Client, error) {
 	}, nil
 }
 
-// Dial creates a new S3Conn (virtual net.Conn tunneled over S3 PUT/GET).
+// Dial creates a new MuxStream (multiplexed over the single virtual S3 session).
 func (c *Client) Dial(ctx context.Context) (net.Conn, error) {
-	sessionID, err := generateSessionID()
-	if err != nil {
-		return nil, fmt.Errorf("s3: failed to generate session ID: %w", err)
+	c.muxMu.Lock()
+	defer c.muxMu.Unlock()
+
+	if c.muxSession == nil || c.muxSession.isClosed() {
+		sessionID := c.opts.ClientID
+		if sessionID == "" {
+			var err error
+			sessionID, err = generateSessionID()
+			if err != nil {
+				return nil, fmt.Errorf("s3: failed to generate session ID: %w", err)
+			}
+		}
+		conn := newS3Conn(c, sessionID)
+		c.muxSession = NewMuxSession(conn)
 	}
-	return newS3Conn(c, sessionID), nil
+
+	return c.muxSession.OpenStream()
 }
 
 // Close releases HTTP client resources.
 func (c *Client) Close() error {
+	c.muxMu.Lock()
+	if c.muxSession != nil {
+		_ = c.muxSession.Close()
+		c.muxSession = nil
+	}
+	c.muxMu.Unlock()
 	c.httpClient.CloseIdleConnections()
 	return nil
 }
