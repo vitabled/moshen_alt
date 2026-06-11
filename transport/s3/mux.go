@@ -155,15 +155,18 @@ func (s *MuxSession) writeFrame(streamID uint32, frameType byte, payload []byte)
 	}
 
 	length := len(payload)
-	header := make([]byte, 7+length)
+	var header [7]byte
 	binary.BigEndian.PutUint32(header[0:4], streamID)
 	header[4] = frameType
 	binary.BigEndian.PutUint16(header[5:7], uint16(length))
-	if length > 0 {
-		copy(header[7:], payload)
-	}
 
-	_, err := s.conn.Write(header)
+	_, err := s.conn.Write(header[:7])
+	if err != nil {
+		return err
+	}
+	if length > 0 {
+		_, err = s.conn.Write(payload)
+	}
 	return err
 }
 
@@ -181,10 +184,19 @@ func (s *MuxSession) readLoop() {
 		length := binary.BigEndian.Uint16(header[5:7])
 
 		var payload []byte
+		var buf []byte
 		if length > 0 {
-			payload = make([]byte, length)
+			if length <= 65535 {
+				buf = chunkPool.Get().([]byte)
+				payload = buf[:length]
+			} else {
+				payload = make([]byte, length)
+			}
 			_, err = io.ReadFull(s.conn, payload)
 			if err != nil {
+				if buf != nil {
+					chunkPool.Put(buf)
+				}
 				s.Close()
 				return
 			}
@@ -208,6 +220,10 @@ func (s *MuxSession) readLoop() {
 				delete(s.streams, streamID)
 				s.mu.Unlock()
 			}
+		}
+
+		if buf != nil {
+			chunkPool.Put(buf)
 		}
 	}
 }

@@ -110,6 +110,12 @@ func (c *Client) putObject(ctx context.Context, key string, data []byte) error {
 	return nil
 }
 
+var chunkPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 65536)
+	},
+}
+
 // getObject downloads the specified object key.
 // Returns the body bytes and true if the object exists.
 // Returns nil, false if the object does not exist (404/NoSuchKey).
@@ -137,6 +143,17 @@ func (c *Client) getObject(ctx context.Context, key string) ([]byte, bool, error
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		io.Copy(io.Discard, resp.Body)
 		return nil, false, fmt.Errorf("s3: GET %s returned %d", key, resp.StatusCode)
+	}
+
+	contentLen := resp.ContentLength
+	if contentLen > 0 && contentLen <= 65536 {
+		buf := chunkPool.Get().([]byte)
+		_, err := io.ReadFull(resp.Body, buf[:contentLen])
+		if err != nil {
+			chunkPool.Put(buf)
+			return nil, false, err
+		}
+		return buf[:contentLen], true, nil
 	}
 
 	body, err := io.ReadAll(resp.Body)

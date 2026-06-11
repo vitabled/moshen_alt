@@ -68,7 +68,7 @@ func (c *S3Conn) Read(b []byte) (int, error) {
 			n := copy(b, c.readBuf[c.readPos:])
 			c.readPos += n
 			if c.readPos >= len(c.readBuf) {
-				c.readBuf = nil
+				c.putReadBufLocked()
 				c.readPos = 0
 			}
 			return n, nil
@@ -77,6 +77,7 @@ func (c *S3Conn) Read(b []byte) (int, error) {
 		// Check if closed
 		select {
 		case <-c.closed:
+			c.putReadBufLocked()
 			return 0, io.EOF
 		default:
 		}
@@ -95,6 +96,7 @@ func (c *S3Conn) Read(b []byte) (int, error) {
 			// On transient errors, wait and retry
 			select {
 			case <-c.closed:
+				c.putReadBufLocked()
 				return 0, io.EOF
 			case <-time.After(c.pollInterval):
 			}
@@ -103,6 +105,7 @@ func (c *S3Conn) Read(b []byte) (int, error) {
 
 		if found && len(data) > 0 {
 			// Data received — keep polling at fixed interval
+			c.putReadBufLocked() // Free any previously unused read buffer
 			c.readBuf = data
 			c.readPos = 0
 			c.readSeq++
@@ -110,7 +113,7 @@ func (c *S3Conn) Read(b []byte) (int, error) {
 			n := copy(b, c.readBuf[c.readPos:])
 			c.readPos += n
 			if c.readPos >= len(c.readBuf) {
-				c.readBuf = nil
+				c.putReadBufLocked()
 				c.readPos = 0
 			}
 			return n, nil
@@ -119,6 +122,7 @@ func (c *S3Conn) Read(b []byte) (int, error) {
 		// Empty — wait before next poll
 		select {
 		case <-c.closed:
+			c.putReadBufLocked()
 			return 0, io.EOF
 		case <-time.After(c.pollInterval):
 		}
@@ -176,16 +180,27 @@ func (c *S3Conn) flushLocked() error {
 	ctx := c.contextWithDeadline(c.writeDeadline.Load())
 	key := c.client.c2sKey(c.sessionID, c.writeSeq)
 
-	data := make([]byte, len(c.writeBuf))
-	copy(data, c.writeBuf)
+	buf := chunkPool.Get().([]byte)
+	n := copy(buf, c.writeBuf)
+	data := buf[:n]
 	c.writeBuf = c.writeBuf[:0]
 
 	err := c.client.putObject(ctx, key, data)
+	chunkPool.Put(buf)
 	if err != nil {
 		return fmt.Errorf("s3: PUT c2s/%06d.bin failed: %w", c.writeSeq, err)
 	}
 	c.writeSeq++
 	return nil
+}
+
+func (c *S3Conn) putReadBufLocked() {
+	if c.readBuf != nil {
+		if cap(c.readBuf) == 65536 {
+			chunkPool.Put(c.readBuf[:65536])
+		}
+		c.readBuf = nil
+	}
 }
 
 // Close signals shutdown. Best-effort cleanup of session objects is not
@@ -194,6 +209,9 @@ func (c *S3Conn) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.closed)
 	})
+	c.readMu.Lock()
+	c.putReadBufLocked()
+	c.readMu.Unlock()
 	return nil
 }
 
