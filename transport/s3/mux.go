@@ -10,13 +10,13 @@ import (
 
 // MuxStream wraps a StreamID and implements net.Conn.
 type MuxStream struct {
-	id      uint32
-	session *MuxSession
-	mu      sync.Mutex
-	readBuf []byte
+	id       uint32
+	session  *MuxSession
+	mu       sync.Mutex
+	readBuf  []byte
 	readCond *sync.Cond
-	closed  bool
-	closeMu sync.Mutex
+	closed   bool
+	closeMu  sync.Mutex
 }
 
 func (s *MuxStream) Read(b []byte) (int, error) {
@@ -92,10 +92,10 @@ func (s *MuxStream) closeInternal() {
 	s.mu.Unlock()
 }
 
-func (s *MuxStream) LocalAddr() net.Addr            { return s.session.conn.LocalAddr() }
-func (s *MuxStream) RemoteAddr() net.Addr           { return s.session.conn.RemoteAddr() }
-func (s *MuxStream) SetDeadline(t time.Time) error  { return nil }
-func (s *MuxStream) SetReadDeadline(t time.Time) error { return nil }
+func (s *MuxStream) LocalAddr() net.Addr                { return s.session.conn.LocalAddr() }
+func (s *MuxStream) RemoteAddr() net.Addr               { return s.session.conn.RemoteAddr() }
+func (s *MuxStream) SetDeadline(t time.Time) error      { return nil }
+func (s *MuxStream) SetReadDeadline(t time.Time) error  { return nil }
 func (s *MuxStream) SetWriteDeadline(t time.Time) error { return nil }
 
 // MuxSession multiplexes multiple streams over a single connection.

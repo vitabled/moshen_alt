@@ -12,17 +12,25 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 )
 
-// ========== FILL THESE IN ==========
-const (
-	testEndpoint  = "https://s3.ru1.storage.beget.cloud" // your S3 endpoint
-	testRegion    = "ru1"                                // your region
-	testBucket    = "304a6d5bed63-gymlogappbucket"       // your bucket name
-	testAccessKey = "UMP8RBNHXZEHRPL1TVGT"
-	testSecretKey = "LQzo4eDzFlMGkmVCLbDhDAS6vHWrQtFGV2YHON97"
+// ========== CREDENTIALS FROM ENVIRONMENT ==========
+// Never commit real keys: set them in the environment before running the test.
+//
+//	export S3_TEST_ENDPOINT=https://s3.example.cloud
+//	export S3_TEST_REGION=ru1
+//	export S3_TEST_BUCKET=my-bucket
+//	export S3_TEST_ACCESS_KEY=...
+//	export S3_TEST_SECRET_KEY=...
+var (
+	testEndpoint  = os.Getenv("S3_TEST_ENDPOINT")
+	testRegion    = os.Getenv("S3_TEST_REGION")
+	testBucket    = os.Getenv("S3_TEST_BUCKET")
+	testAccessKey = os.Getenv("S3_TEST_ACCESS_KEY")
+	testSecretKey = os.Getenv("S3_TEST_SECRET_KEY")
 	testPrefix    = "vpn-sessions/"
 )
 
@@ -30,6 +38,9 @@ const (
 
 func testClient(t *testing.T) *Client {
 	t.Helper()
+	if testEndpoint == "" || testBucket == "" || testAccessKey == "" || testSecretKey == "" {
+		t.Skip("S3 credentials not set: export S3_TEST_ENDPOINT/S3_TEST_REGION/S3_TEST_BUCKET/S3_TEST_ACCESS_KEY/S3_TEST_SECRET_KEY")
+	}
 	opts := Options{
 		Endpoint:  testEndpoint,
 		Region:    testRegion,

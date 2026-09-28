@@ -5,13 +5,13 @@ import "time"
 // Options holds the S3 transport configuration parsed from the YAML
 // `s3-opts` block inside a proxy definition.
 type Options struct {
-	Endpoint  string `proxy:"endpoint"`              // full URL, e.g. "https://s3.us-east-1.amazonaws.com"
-	Region    string `proxy:"region,omitempty"`       // AWS region, default "us-east-1"
-	Bucket    string `proxy:"bucket"`                 // bucket name
-	AccessKey string `proxy:"access-key"`             // AWS access key ID
-	SecretKey string `proxy:"secret-key"`             // AWS secret access key
-	Prefix    string `proxy:"prefix,omitempty"`       // object key prefix, default "tunnel/"
-	ClientID  string `proxy:"client-id,omitempty"`    // optional client ID for zero-list discovery
+	Endpoint  string `proxy:"endpoint"`            // full URL, e.g. "https://s3.us-east-1.amazonaws.com"
+	Region    string `proxy:"region,omitempty"`    // AWS region, default "us-east-1"
+	Bucket    string `proxy:"bucket"`              // bucket name
+	AccessKey string `proxy:"access-key"`          // AWS access key ID
+	SecretKey string `proxy:"secret-key"`          // AWS secret access key
+	Prefix    string `proxy:"prefix,omitempty"`    // object key prefix, default "tunnel/"
+	ClientID  string `proxy:"client-id,omitempty"` // optional client ID for zero-list discovery
 
 	// Polling tuning
 	PollMinMs int `proxy:"poll-min-ms,omitempty"` // aggressive poll floor in ms (default 50)
