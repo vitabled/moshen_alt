@@ -51,7 +51,9 @@ type Tun struct {
 	ExcludeMACAddress                     []string       `yaml:"exclude-mac-address" json:"exclude-mac-address,omitempty"`
 	EndpointIndependentNat                bool           `yaml:"endpoint-independent-nat" json:"endpoint-independent-nat,omitempty"`
 	UDPTimeout                            int64          `yaml:"udp-timeout" json:"udp-timeout,omitempty"`
+	ICMPTimeout                           int64          `yaml:"icmp-timeout" json:"icmp-timeout,omitempty"`
 	DisableICMPForwarding                 bool           `yaml:"disable-icmp-forwarding" json:"disable-icmp-forwarding,omitempty"`
+	CongestionController                  string         `yaml:"congestion-controller" json:"congestion-controller,omitempty"`
 	FileDescriptor                        int            `yaml:"file-descriptor" json:"file-descriptor"`
 
 	Inet4RouteAddress        []netip.Prefix `yaml:"inet4-route-address" json:"inet4-route-address,omitempty"`
@@ -62,6 +64,9 @@ type Tun struct {
 	// darwin special config
 	RecvMsgX bool `yaml:"recvmsgx" json:"recvmsgx,omitempty"`
 	SendMsgX bool `yaml:"sendmsgx" json:"sendmsgx,omitempty"`
+
+	// gvisor special config (Non-public option; do not include it in the document.)
+	ProcessorsPerChannel int `yaml:"processors-per-channel" json:"processors-per-channel,omitempty"`
 }
 
 func (t *Tun) Sort() {
@@ -201,7 +206,13 @@ func (t *Tun) Equal(other Tun) bool {
 	if t.UDPTimeout != other.UDPTimeout {
 		return false
 	}
+	if t.ICMPTimeout != other.ICMPTimeout {
+		return false
+	}
 	if t.DisableICMPForwarding != other.DisableICMPForwarding {
+		return false
+	}
+	if t.CongestionController != other.CongestionController {
 		return false
 	}
 	if t.FileDescriptor != other.FileDescriptor {
@@ -225,6 +236,10 @@ func (t *Tun) Equal(other Tun) bool {
 		return false
 	}
 	if t.SendMsgX != other.SendMsgX {
+		return false
+	}
+
+	if t.ProcessorsPerChannel != other.ProcessorsPerChannel {
 		return false
 	}
 

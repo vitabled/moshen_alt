@@ -97,6 +97,8 @@ type tunSchema struct {
 	ExcludeMACAddress                     *[]string       `yaml:"exclude-mac-address" json:"exclude-mac-address,omitempty"`
 	EndpointIndependentNat                *bool           `yaml:"endpoint-independent-nat" json:"endpoint-independent-nat,omitempty"`
 	UDPTimeout                            *int64          `yaml:"udp-timeout" json:"udp-timeout,omitempty"`
+	ICMPTimeout                           *int64          `yaml:"icmp-timeout" json:"icmp-timeout,omitempty"`
+	CongestionController                  *string         `yaml:"congestion-controller" json:"congestion-controller,omitempty"`
 	FileDescriptor                        *int            `yaml:"file-descriptor" json:"file-descriptor"`
 
 	Inet4RouteAddress        *[]netip.Prefix `yaml:"inet4-route-address" json:"inet4-route-address,omitempty"`
@@ -107,6 +109,9 @@ type tunSchema struct {
 	// darwin special config
 	RecvMsgX *bool `yaml:"recvmsgx" json:"recvmsgx,omitempty"`
 	SendMsgX *bool `yaml:"sendmsgx" json:"sendmsgx,omitempty"`
+
+	// gvisor special config (Non-public option; do not include it in the document.)
+	ProcessorsPerChannel *int `yaml:"processors-per-channel" json:"processors-per-channel,omitempty"`
 }
 
 type tuicServerSchema struct {
@@ -257,6 +262,12 @@ func pointerOrDefaultTun(p *tunSchema, def LC.Tun) LC.Tun {
 		if p.UDPTimeout != nil {
 			def.UDPTimeout = *p.UDPTimeout
 		}
+		if p.ICMPTimeout != nil {
+			def.ICMPTimeout = *p.ICMPTimeout
+		}
+		if p.CongestionController != nil {
+			def.CongestionController = *p.CongestionController
+		}
 		if p.FileDescriptor != nil {
 			def.FileDescriptor = *p.FileDescriptor
 		}
@@ -265,6 +276,9 @@ func pointerOrDefaultTun(p *tunSchema, def LC.Tun) LC.Tun {
 		}
 		if p.SendMsgX != nil {
 			def.SendMsgX = *p.SendMsgX
+		}
+		if p.ProcessorsPerChannel != nil {
+			def.ProcessorsPerChannel = *p.ProcessorsPerChannel
 		}
 	}
 	return def

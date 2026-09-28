@@ -1,6 +1,7 @@
 package convert_test
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/metacubex/mihomo/adapter"
@@ -37,6 +38,37 @@ func TestConvertsV2Ray_normal(t *testing.T) {
 	assert.Equal(t, expected, proxies)
 
 	_, err = adapter.ParseProxy(proxies[0])
+	assert.NoError(t, err)
+}
+
+func TestConvertsV2Ray_hysteria2PortHopping(t *testing.T) {
+	uri := "hysteria2://letmein@example.com:443,5000-6000/?sni=example.com#hop"
+	proxies, err := ConvertsV2Ray([]byte(uri))
+	assert.Nil(t, err)
+	assert.Equal(t, "example.com", proxies[0]["server"])
+	assert.Equal(t, "443", proxies[0]["port"])
+	assert.Equal(t, "443,5000-6000", proxies[0]["ports"])
+
+	_, err = adapter.ParseProxy(proxies[0])
+	assert.NoError(t, err)
+}
+
+func TestConvertsV2Ray_hysteria2RealmScheme(t *testing.T) {
+	uri := "hysteria2+realm://tok3n@rendezvous.example.com:8443/rid42?auth=letmein&stun=stun1:3478&stun=stun2:3478&sni=example.com#realm"
+	proxies, err := ConvertsV2Ray([]byte(uri))
+	assert.Nil(t, err)
+	p := proxies[0]
+	assert.Equal(t, "hysteria2", p["type"])
+	assert.Equal(t, "letmein", p["password"])
+	assert.Equal(t, map[string]any{
+		"enable":       true,
+		"server-url":   "https://rendezvous.example.com:8443",
+		"token":        "tok3n",
+		"realm-id":     "rid42",
+		"stun-servers": []string{"stun1:3478", "stun2:3478"},
+	}, p["realm-opts"])
+
+	_, err = adapter.ParseProxy(p)
 	assert.NoError(t, err)
 }
 
@@ -161,6 +193,51 @@ func TestConvertsV2RayVlessRealityVisionTCPWithoutHeaderType(t *testing.T) {
 
 	_, err = adapter.ParseProxy(proxies[0])
 	assert.NoError(t, err)
+}
+
+func TestConvertsV2RayRealityMLKEM768(t *testing.T) {
+	const publicKey = "ppQ9FwLrLIa0AOrp1WvcyiaQ37vg2WSy_CD4bIdiTUw"
+	tests := []struct {
+		name, query, publicKey string
+		want                   any
+	}{
+		{"absent", "", publicKey, nil},
+		{"empty", "&support-x25519mlkem768=", publicKey, nil},
+		{"true", "&support-x25519mlkem768=true", publicKey, true},
+		{"one", "&support-x25519mlkem768=1", publicKey, true},
+		{"false", "&support-x25519mlkem768=false", publicKey, false},
+		{"zero", "&support-x25519mlkem768=0", publicKey, false},
+		{"invalid", "&support-x25519mlkem768=invalid", publicKey, nil},
+		{"no-public-key", "&support-x25519mlkem768=true", "", nil},
+	}
+	for _, scheme := range []string{"vless", "vmess"} {
+		for _, tt := range tests {
+			t.Run(scheme+"/"+tt.name, func(t *testing.T) {
+				uri := scheme + "://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443" +
+					"?security=reality&type=tcp&sid=00112233&pbk=" + tt.publicKey + tt.query
+				for _, input := range []string{uri, base64.StdEncoding.EncodeToString([]byte(uri))} {
+					proxies, err := ConvertsV2Ray([]byte(input))
+					if !assert.NoError(t, err) || !assert.Len(t, proxies, 1) {
+						return
+					}
+					if tt.publicKey == "" {
+						assert.NotContains(t, proxies[0], "reality-opts")
+					} else {
+						expected := map[string]any{
+							"public-key": tt.publicKey,
+							"short-id":   "00112233",
+						}
+						if tt.want != nil {
+							expected["support-x25519mlkem768"] = tt.want
+						}
+						assert.Equal(t, expected, proxies[0]["reality-opts"])
+					}
+					_, err = adapter.ParseProxy(proxies[0])
+					assert.NoError(t, err)
+				}
+			})
+		}
+	}
 }
 
 func TestConvertsV2RayVlessTCPHTTPHeaderType(t *testing.T) {
